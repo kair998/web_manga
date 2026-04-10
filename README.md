@@ -1,3 +1,5 @@
+<img width="1920" height="991" alt="demo" src="https://github.com/user-attachments/assets/576e243c-af25-4530-b424-a0119b395330" />
+
 # 漫画阅读器
 
 一个简洁高效的 Web 漫画阅读器，单文件无需构建，直接在浏览器中打开即可使用。
