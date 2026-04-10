@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漫画阅读器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0a0a0a;
+            --panel: #141414;
+            --hover: #222;
+            --accent: #e94560;
+            --text: #ddd;
+            --dim: #444;
+            --side: 180px;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* 工具栏 */
+        .toolbar {
+            height: 46px;
+            background: var(--panel);
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            gap: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 100;
+        }
+
+        .toolbar h1 { font-size: 13px; font-weight: 500; color: var(--accent); }
+
+        .btn {
+            background: var(--hover);
+            border: none;
+            color: var(--text);
+            padding: 5px 11px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.12s;
+        }
+
+        .btn:hover { background: var(--accent); }
+        .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .btn:disabled:hover { background: var(--hover); }
+
+        .info { font-size: 11px; color: var(--dim); min-width: 55px; text-align: center; }
+        .right { margin-left: auto; }
+
+        select {
+            background: var(--hover);
+            color: var(--text);
+            border: none;
+            padding: 5px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        /* 主布局 */
+        .wrap {
+            display: flex;
+            height: calc(100vh - 46px);
+            margin-top: 46px;
+        }
+
+        /* 侧边栏 */
+        .side {
+            width: 0;
+            background: var(--panel);
+            border-right: 1px solid rgba(255,255,255,0.04);
+            overflow: hidden;
+            transition: width 0.2s;
+            flex-shrink: 0;
+        }
+
+        .side.open { width: var(--side); }
+
+        .side-inner {
+            width: var(--side);
+            height: 100%;
+            overflow-y: auto;
+        }
+
+        .side-head {
+            padding: 8px 10px;
+            font-size: 9px;
+            color: var(--dim);
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            position: sticky;
+            top: 0;
+            background: var(--panel);
+        }
+
+        .thumbs {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 5px;
+            padding: 5px;
+        }
+
+        .thumb {
+            aspect-ratio: 0.7;
+            background: var(--bg);
+            border-radius: 2px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            overflow: hidden;
+            transition: border-color 0.12s;
+        }
+
+        .thumb:hover { border-color: rgba(233,69,96,0.45); }
+        .thumb.act { border-color: var(--accent); }
+
+        .thumb canvas {
+            width: 100%;
+            height: calc(100% - 14px);
+            display: block;
+            object-fit: cover;
+            pointer-events: none;
+        }
+
+        .thumb span {
+            display: block;
+            font-size: 8px;
+            text-align: center;
+            padding: 2px;
+            color: var(--dim);
+            background: rgba(0,0,0,0.45);
+        }
+
+        .thumb.act span { color: var(--accent); }
+
+        /* 阅读区 */
+        .reader {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .pages {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 3px;
+            overflow: hidden;
+        }
+
+        .pages img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        /* 单页模式 */
+        .reader.s1 .pages { padding: 8px; }
+
+        /* 双页模式 - 日漫从右到左 */
+        .reader.s2 .pages { flex-direction: row-reverse; padding: 8px; }
+        .reader.s2 .pages img { max-width: 50%; }
+
+        /* 双页合图 */
+        .reader.s2 .pages.spread { flex-direction: row-reverse; }
+        .reader.s2 .pages.spread img { max-width: 100%; }
+
+        /* 欢迎/提示界面 */
+        .welcome {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 14px;
+            color: var(--dim);
+        }
+
+        .welcome-icon { font-size: 42px; opacity: 0.35; }
+        .welcome h2 { font-size: 18px; color: var(--text); font-weight: 300; }
+        .welcome p { font-size: 12px; max-width: 300px; text-align: center; line-height: 1.5; }
+        .welcome .btn { padding: 8px 20px; font-size: 13px; }
+
+        /* 右侧顶部：快捷键 + 放大镜设置 */
+        .top-right {
+            position: fixed;
+            top: 54px;
+            right: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 90;
+            align-items: flex-end;
+        }
+
+        .top-right .panel {
+            background: var(--panel);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 12px;
+            line-height: 1.8;
+            color: #888;
+        }
+
+        .top-right .key {
+            display: inline-block;
+            background: var(--hover);
+            color: #ccc;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+
+        .top-right .label { color: #666; }
+
+        /* 放大镜设置 */
+        .lens-ctrl {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .lens-ctrl .title {
+            color: #777;
+            font-size: 11px;
+        }
+
+        .lens-ctrl input[type="range"] {
+            -webkit-appearance: none;
+            width: 100px;
+            height: 4px;
+            background: var(--hover);
+            border-radius: 2px;
+            outline: none;
+        }
+
+        .lens-ctrl input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            background: var(--accent);
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .lens-ctrl .size-label {
+            font-size: 11px;
+            color: var(--accent);
+            min-width: 42px;
+        }
+
+        .lens-hint-panel {
+            font-size: 12px;
+            color: #ccc;
+        }
+
+        /* 翻页区域 */
+        .turner {
+            position: fixed;
+            top: 46px;
+            bottom: 0;
+            width: 16%;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.15s;
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .turner:hover { opacity: 1; }
+        .turner-l { left: 0; background: linear-gradient(to right, rgba(0,0,0,0.2), transparent); }
+        .turner-r { right: 0; background: linear-gradient(to left, rgba(0,0,0,0.2), transparent); }
+
+        .turner::after {
+            content: '';
+            width: 28px;
+            height: 28px;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 50%;
+        }
+
+        .turner-l::after { border-right: none; border-top: none; transform: rotate(45deg) translate(4px, 4px); }
+        .turner-r::after { border-left: none; border-bottom: none; transform: rotate(45deg) translate(-4px, -4px); }
+
+        /* 侧边栏打开时隐藏翻页 */
+        body.side-open .turner { display: none; }
+
+        /* 目录悬停预览 */
+        .preview {
+            position: fixed;
+            top: 54px;
+            right: 12px;
+            z-index: 95;
+            background: var(--panel);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 6px;
+            padding: 8px;
+            display: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+
+        .preview img {
+            max-width: 400px;
+            max-height: 70vh;
+            display: block;
+            border-radius: 4px;
+        }
+
+        /* 滚动条 */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--hover); border-radius: 2px; }
+
+        /* 放大镜 */
+        #lens {
+            position: fixed;
+            width: 260px;
+            height: 260px;
+            border-radius: 50%;
+            box-shadow: 0 0 0 2px rgba(233,69,96,0.7), 0 0 20px rgba(0,0,0,0.5);
+            pointer-events: none;
+            display: none;
+            z-index: 200;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #lens img {
+            position: absolute;
+            pointer-events: none;
+        }
+
+        #lens .zoom-info {
+            position: absolute;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 9px;
+            color: #fff;
+            background: rgba(0,0,0,0.5);
+            padding: 2px 8px;
+            border-radius: 10px;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <h1>漫画阅读器</h1>
+        <button class="btn" id="btnOpen">选择文件夹</button>
+        <button class="btn" id="btnSide" disabled>目录</button>
+        <div class="right">
+            <button class="btn" id="btnPrev">上一页</button>
+            <span class="info" id="info">- / -</span>
+            <button class="btn" id="btnNext">下一页</button>
+        </div>
+        <select id="selMode">
+            <option value="single">单页</option>
+            <option value="double" selected>双页</option>
+        </select>
+    </div>
+
+    <!-- 右侧顶部：快捷键 + 放大镜设置 -->
+    <div class="top-right">
+        <div class="panel shortcuts-panel">
+            <span class="key">←</span><span class="key">X</span> <span class="label">上一页</span>
+            &nbsp;
+            <span class="key">→</span><span class="key">C</span> <span class="label">下一页</span>
+        </div>
+
+        <div class="panel shortcuts-panel">
+            <span class="key">A</span> <span class="label">目录</span>
+            &nbsp;
+            <span class="key">Z</span> <span class="label">放大</span>
+        </div>
+
+        <div class="panel lens-ctrl">
+            <span class="title">放大镜:</span>
+            <input type="range" id="lensSize" min="150" max="500" value="260" step="10" />
+            <span class="size-label" id="lensSizeLabel">260px</span>
+        </div>
+
+        <div class="panel lens-hint-panel">滚轮控制放大倍数</div>
+    </div>
+
+    <div class="wrap">
+        <aside class="side" id="side">
+            <div class="side-inner">
+                <div class="side-head">目录</div>
+                <div class="thumbs" id="thumbs"></div>
+            </div>
+        </aside>
+
+        <main class="reader" id="reader">
+            <div class="welcome" id="welcome">
+                <div class="welcome-icon">📚</div>
+                <h2>漫画阅读器</h2>
+                <p>选择漫画文件夹即可开始阅读</p>
+                <button class="btn" id="btnOpen2">选择文件夹</button>
+            </div>
+        </main>
+    </div>
+
+    <div class="turner turner-l" id="turnL"></div>
+    <div class="turner turner-r" id="turnR"></div>
+
+    <!-- 目录悬停预览 -->
+    <div class="preview" id="preview"><img id="previewImg" /></div>
+
+    <!-- 放大镜 -->
+    <div id="lens">
+        <img id="lensImg" />
+        <div class="zoom-info" id="zoomInfo">2.0x</div>
+    </div>
+
+    <script>
+        // ==== 状态 ====
+        const S = {
+            files: [],
+            groups: [],
+            cur: 0,
+            mode: 'double',
+            side: false,
+            zooming: false,
+            zoom: 2,
+            zoomMin: 1.5,
+            zoomMax: 6,
+            activeImg: null,
+            lensSize: 260,
+            hoverTimer: null,
+            hoveredGroup: -1,
+            closeTimer: null
+        };
+
+        // ==== 元素 ====
+        const E = {};
+        ['btnOpen', 'btnOpen2', 'btnSide', 'btnPrev', 'btnNext', 'info', 'selMode',
+         'side', 'thumbs', 'reader', 'welcome', 'turnL', 'turnR',
+         'lens', 'lensImg', 'zoomInfo', 'lensSize', 'lensSizeLabel',
+         'preview', 'previewImg'
+        ].forEach(id => E[id] = document.getElementById(id));
+
+        // ==== 文件解析 ====
+        function parseNum(name) {
+            const m = name.match(/(\d+)([a-zA-Z])?(?:-(\d+))?\.jpe?g$/i);
+            if (m) return { p: parseInt(m[1]), s: m[2] || '', r: m[3] ? parseInt(m[3]) : null, sp: !!m[3] };
+            return { p: 999, s: '', r: null, sp: false };
+        }
+
+        function sortFiles(a, b) {
+            const x = parseNum(a.name), y = parseNum(b.name);
+            if (x.p !== y.p) return x.p - y.p;
+            if (x.s !== y.s) return (x.s || 'z').localeCompare(y.s || 'z');
+            if (x.r !== null && y.r !== null) return x.r - y.r;
+            return 0;
+        }
+
+        function makeGroups(files) {
+            const g = [];
+            for (let i = 0; i < files.length; i++) {
+                const pg = parseNum(files[i].name);
+                if (pg.sp) {
+                    g.push({ idx: [i], label: pg.p + '-' + pg.r, spread: true });
+                } else {
+                    const r = Math.min(i + 1, files.length - 1);
+                    g.push({ idx: [i, r], label: (i + 1) + '-' + (r + 1), spread: false });
+                    i++;
+                }
+            }
+            return g;
+        }
+
+        // ==== 核心 ====
+        async function openFolder() {
+            try {
+                const dir = await window.showDirectoryPicker();
+                const entries = [];
+                for await (const e of dir.values()) {
+                    if (e.kind === 'file') entries.push(e);
+                }
+                const imgs = entries.filter(e => /\.(jpg|jpeg|png)$/i.test(e.name));
+                if (!imgs.length) { alert('未找到图片'); return; }
+
+                const files = await Promise.all(imgs.map(async e => await e.getFile()));
+                files.sort(sortFiles);
+
+                S.files = files;
+                S.groups = makeGroups(files);
+                S.cur = 0;
+
+                E.btnSide.disabled = false;
+                E.btnPrev.disabled = false;
+                E.btnNext.disabled = false;
+
+                // 隐藏两侧提示
+                document.body.classList.add('loaded');
+
+                renderThumbs();
+                render();
+            } catch (err) {
+                if (err.name !== 'AbortError') console.error(err);
+            }
+        }
+
+        function renderThumbs() {
+            E.thumbs.innerHTML = '';
+            S.groups.forEach((g, i) => {
+                const d = document.createElement('div');
+                d.className = 'thumb' + (i === S.cur ? ' act' : '');
+
+                const c = document.createElement('canvas');
+                const img = new Image();
+                img.src = URL.createObjectURL(S.files[g.idx[0]]);
+                img.onload = () => {
+                    const sc = Math.min(65 / img.width, 80 / img.height);
+                    c.width = img.width * sc;
+                    c.height = img.height * sc;
+                    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                    URL.revokeObjectURL(img.src);
+                };
+
+                const s = document.createElement('span');
+                s.textContent = g.label;
+
+                d.appendChild(c);
+                d.appendChild(s);
+
+                // 悬停预览
+                d.addEventListener('mouseenter', () => {
+                    clearTimeout(S.hoverTimer);
+                    S.hoverTimer = setTimeout(() => {
+                        showPreview(i);
+                    }, 1000);
+                });
+                d.addEventListener('mouseleave', () => {
+                    clearTimeout(S.hoverTimer);
+                    hidePreview();
+                });
+
+                d.addEventListener('click', () => go(i));
+                E.thumbs.appendChild(d);
+            });
+        }
+
+        function showPreview(idx) {
+            if (idx < 0 || idx >= S.groups.length) return;
+            S.hoveredGroup = idx;
+            const g = S.groups[idx];
+            const file = S.files[g.idx[0]];
+            E.previewImg.src = URL.createObjectURL(file);
+            E.preview.style.display = 'block';
+        }
+
+        function hidePreview() {
+            S.hoveredGroup = -1;
+            E.preview.style.display = 'none';
+        }
+
+        function updThumb() {
+            E.thumbs.querySelectorAll('.thumb').forEach((t, i) => t.classList.toggle('act', i === S.cur));
+            const act = E.thumbs.querySelector('.thumb.act');
+            if (act) act.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+
+        function render() {
+            if (!S.files.length) return;
+            E.welcome.style.display = 'none';
+
+            const pages = document.createElement('div');
+            pages.className = 'pages';
+            const g = S.groups[S.cur];
+
+            if (S.mode === 'single') {
+                E.reader.className = 'reader s1';
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(S.files[g.idx[0]]);
+                img.alt = g.label;
+                pages.appendChild(img);
+            } else {
+                E.reader.className = 'reader s2' + (g.spread ? ' spread' : '');
+                g.idx.forEach((ii) => {
+                    const img = document.createElement('img');
+                    img.src = URL.createObjectURL(S.files[ii]);
+                    img.alt = ii + 1;
+                    pages.appendChild(img);
+                });
+            }
+
+            E.reader.innerHTML = '';
+            E.reader.appendChild(pages);
+            E.info.textContent = (S.cur + 1) + ' / ' + S.groups.length;
+            updThumb();
+
+            // 翻页后如果有放大镜，重置活动图片
+            if (S.zooming) {
+                S.activeImg = null;
+            }
+        }
+
+        function go(idx) {
+            if (idx < 0 || idx >= S.groups.length) return;
+            S.cur = idx;
+            render();
+            // 不再自动关闭目录，由用户手动关闭或鼠标回到阅读区
+        }
+
+        function prev() { go(S.cur - 1); }
+        function next() { go(S.cur + 1); }
+
+        function toggleSide() {
+            S.side = !S.side;
+            E.side.classList.toggle('open', S.side);
+            document.body.classList.toggle('side-open', S.side);
+        }
+
+        // ==== 放大镜 ====
+        function startZoom() {
+            if (!S.files.length) return;
+            S.zooming = true;
+            S.zoom = 2;
+            S.activeImg = null;
+            E.lens.style.display = 'block';
+        }
+
+        function stopZoom() {
+            S.zooming = false;
+            S.activeImg = null;
+            E.lens.style.display = 'none';
+        }
+
+        function moveZoom(e) {
+            if (!S.zooming) return;
+
+            // 找出鼠标在哪张图片上
+            const imgs = E.reader.querySelectorAll('img');
+            let targetImg = null;
+
+            for (const img of imgs) {
+                const rect = img.getBoundingClientRect();
+                if (e.clientX >= rect.left && e.clientX <= rect.right &&
+                    e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                    targetImg = img;
+                    break;
+                }
+            }
+
+            if (!targetImg) return;
+            S.activeImg = targetImg;
+
+            const rect = targetImg.getBoundingClientRect();
+            const sz = S.lensSize;
+            const half = sz / 2;
+
+            // 放大镜位置
+            let left = e.clientX + 20;
+            let top = e.clientY + 20;
+            if (left + sz > window.innerWidth) left = e.clientX - sz - 20;
+            if (top + sz > window.innerHeight) top = e.clientY - sz - 20;
+            E.lens.style.width = sz + 'px';
+            E.lens.style.height = sz + 'px';
+            E.lens.style.left = left + 'px';
+            E.lens.style.top = top + 'px';
+
+            // 计算鼠标在图片上的比例
+            const rx = (e.clientX - rect.left) / rect.width;
+            const ry = (e.clientY - rect.top) / rect.height;
+
+            // 更新放大镜图片
+            E.lensImg.src = targetImg.src;
+
+            // 设置放大图片的transform
+            const scaledW = targetImg.naturalWidth * S.zoom;
+            const scaledH = targetImg.naturalHeight * S.zoom;
+            const offsetX = rx * scaledW - half;
+            const offsetY = ry * scaledH - half;
+
+            E.lensImg.style.width = scaledW + 'px';
+            E.lensImg.style.height = scaledH + 'px';
+            E.lensImg.style.left = -offsetX + 'px';
+            E.lensImg.style.top = -offsetY + 'px';
+
+            E.zoomInfo.textContent = S.zoom.toFixed(1) + 'x';
+        }
+
+        function changeZoom(delta) {
+            if (!S.zooming) return;
+            S.zoom = Math.max(S.zoomMin, Math.min(S.zoomMax, S.zoom + delta));
+            // 触发重新定位
+            const last = S.lastMouse;
+            if (last) moveZoom(last);
+        }
+
+        // ==== 事件 ====
+        E.btnOpen.addEventListener('click', openFolder);
+        E.btnOpen2.addEventListener('click', openFolder);
+        E.btnSide.addEventListener('click', toggleSide);
+        E.btnPrev.addEventListener('click', prev);
+        E.btnNext.addEventListener('click', next);
+        E.selMode.addEventListener('change', e => {
+            S.mode = e.target.value;
+            render();
+        });
+
+        E.turnL.addEventListener('click', () => { if (!S.side) prev(); });
+        E.turnR.addEventListener('click', () => { if (!S.side) next(); });
+
+        // 鼠标离开侧边栏，开始计时
+        E.side.addEventListener('mouseleave', () => {
+            clearTimeout(S.closeTimer);
+            S.closeTimer = setTimeout(() => {
+                if (S.side) toggleSide();
+            }, 500);
+        });
+
+        // 鼠标进入阅读区，取消关闭计时
+        E.reader.addEventListener('mouseenter', () => {
+            clearTimeout(S.closeTimer);
+        });
+
+        // 放大镜直径滑块
+        E.lensSize.addEventListener('input', e => {
+            S.lensSize = parseInt(e.target.value);
+            E.lensSizeLabel.textContent = S.lensSize + 'px';
+            // 如果正在放大，立即应用新大小
+            if (S.zooming) {
+                E.lens.style.width = S.lensSize + 'px';
+                E.lens.style.height = S.lensSize + 'px';
+                if (S.lastMouse) moveZoom(S.lastMouse);
+            }
+        });
+
+        document.addEventListener('keydown', e => {
+            if (!S.files.length) return;
+            switch (e.key) {
+                case 'ArrowLeft':
+                case 'x':
+                case 'X':
+                    e.preventDefault();
+                    prev();
+                    break;
+                case 'ArrowRight':
+                case 'c':
+                case 'C':
+                    e.preventDefault();
+                    next();
+                    break;
+                case 'a':
+                case 'A':
+                    toggleSide();
+                    break;
+                case 'Escape':
+                    if (S.side) toggleSide();
+                    break;
+                case 'Home':
+                    go(0);
+                    break;
+                case 'End':
+                    go(S.groups.length - 1);
+                    break;
+                case 'z':
+                case 'Z':
+                    if (!S.zooming) startZoom();
+                    break;
+            }
+        });
+
+        document.addEventListener('keyup', e => {
+            if (e.key === 'z' || e.key === 'Z') {
+                stopZoom();
+            }
+        });
+
+        document.addEventListener('mousemove', e => {
+            S.lastMouse = e;
+            if (S.zooming) moveZoom(e);
+        });
+
+        // 滚轮缩放
+        document.addEventListener('wheel', e => {
+            if (!S.zooming) return;
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.3 : 0.3;
+            changeZoom(delta);
+        }, { passive: false });
+    </script>
+</body>
+</html>
